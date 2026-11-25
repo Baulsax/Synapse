@@ -1,0 +1,423 @@
+
+/* =================================
+   GLOBAL
+   ================================= */
+
+QMainWindow {
+    background-color: #17191f;
+}
+
+QWidget {
+    color: #e5e7eb;
+    font-family: "Segoe UI";
+    font-size: 10pt;
+}
+
+#sidebar {
+    background-color: #20232b;
+    border-right: 1px solid #30343e;
+}
+
+#logo {
+    color: #a78bfa;
+    font-size: 19pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+QFrame#sidebar_divider {
+    background-color: #353945;
+    border: none;
+    max-height: 1px;
+    min-height: 1px;
+}
+
+#nav_button {
+    background-color: transparent;
+    color: #aeb3c0;
+    border: 1px solid transparent;
+    text-align: left;
+    padding: 0px 12px;
+    border-radius: 7px;
+    font-weight: normal;
+}
+
+#nav_button:hover {
+    background-color: #292d37;
+    color: #e5e7eb;
+}
+
+#nav_button:checked {
+    background-color: #343044;
+    color: #b9a2ff;
+    border: 1px solid #51466e;
+    font-weight: bold;
+}
+
+#nav_button:checked:hover {
+    background-color: #403852;
+    border: 1px solid #62527f;
+}
+
+#page_title {
+    font-size: 20pt;
+    font-weight: bold;
+    padding: 10px;
+}
+
+#canvas {
+    background-color: #1d2028;
+    border: 1px solid #30343e;
+    border-radius: 8px;
+}
+
+#properties {
+    background-color: #20232b;
+    border-left: 1px solid #30343e;
+}
+
+#panel_title {
+    font-size: 13pt;
+    font-weight: bold;
+}
+
+#muted {
+    color: #858b99;
+}
+
+
+/* =================================
+   BUTTONS
+   ================================= */
+
+QPushButton#primary_button {
+    background-color: #7c5ce0;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: bold;
+}
+
+QPushButton#primary_button:hover {
+    background-color: #9276ed;
+}
+
+QPushButton#secondary_button {
+    background-color: #343844;
+    color: #e5e7eb;
+    border: 1px solid #454a57;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: bold;
+}
+
+QPushButton#secondary_button:hover {
+    background-color: #454b59;
+}
+
+QPushButton#primary_button,
+QPushButton#secondary_button {
+    min-height: 28px;
+    max-height: 28px;
+    padding: 4px 14px;
+}
+
+QPushButton#danger_button {
+    background-color: transparent;
+    color: #e07878;
+    border: 1px solid #684044;
+    border-radius: 6px;
+    padding: 4px 12px;
+    min-height: 28px;
+    max-height: 28px;
+}
+
+QPushButton#danger_button:hover {
+    background-color: #492b32;
+    border-color: #a34e5a;
+    color: #ffaaaa;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - SEARCH
+   ================================= */
+
+QLineEdit#workflow_search {
+    background-color: #20232b;
+    color: #e5e7eb;
+    border: 1px solid #30343e;
+    border-radius: 7px;
+    padding: 9px 12px;
+    min-height: 22px;
+}
+
+QLineEdit#workflow_search:focus {
+    border: 1px solid #7c5ce0;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - SORT
+   ================================= */
+
+QComboBox#workflow_sort {
+    background-color: #20232b;
+    color: #e5e7eb;
+    border: 1px solid #30343e;
+    border-radius: 7px;
+    padding: 8px 12px;
+    padding-right: 32px;
+    min-width: 155px;
+    min-height: 24px;
+}
+
+QComboBox#workflow_sort:hover {
+    border-color: #51466e;
+}
+
+QComboBox#workflow_sort:focus {
+    border-color: #7c5ce0;
+}
+
+QComboBox#workflow_sort::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 28px;
+    border: none;
+    background: transparent;
+}
+
+QComboBox#workflow_sort::down-arrow {
+    image: none;
+}
+
+QComboBox#workflow_sort QAbstractItemView {
+    background-color: #252832;
+    color: #e5e7eb;
+    border: 1px solid #454052;
+    selection-background-color: #403852;
+    selection-color: #ffffff;
+    outline: none;
+    padding: 4px;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - LIST
+   ================================= */
+
+QScrollArea#workflow_list {
+    background-color: transparent;
+    border: none;
+}
+
+QScrollArea#workflow_list QWidget#qt_scrollarea_viewport {
+    background-color: transparent;
+    border: none;
+}
+
+QWidget#workflow_drop_area {
+    background-color: transparent;
+    border: none;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - CARDS
+   ================================= */
+
+QFrame#workflow_card {
+    background-color: #1d2028;
+    border: 1px solid #30343e;
+    border-radius: 9px;
+}
+
+QFrame#workflow_card:hover {
+    background-color: #232630;
+    border: 1px solid #51466e;
+}
+
+QLabel#workflow_card_title {
+    color: #e5e7eb;
+    font-size: 11pt;
+    font-weight: bold;
+}
+
+QLabel#workflow_card_description {
+    color: #9298a6;
+    font-size: 9pt;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - DRAG HANDLE
+   ================================= */
+
+QLabel#workflow_drag_handle {
+    color: #777d8c;
+    font-size: 21pt;
+    padding: 0px 3px;
+}
+
+QLabel#workflow_drag_handle:hover {
+    color: #b9a2ff;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - CARD BUTTONS
+   ================================= */
+
+QFrame#workflow_card QPushButton {
+    min-width: 76px;
+    max-width: 76px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+QFrame#workflow_card QPushButton#danger_button {
+    background-color: transparent;
+    color: #e07878;
+    border: 1px solid #684044;
+}
+
+QFrame#workflow_card QPushButton#danger_button:hover {
+    background-color: #492b32;
+    border-color: #a34e5a;
+    color: #ffaaaa;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - DRAGGING
+   ================================= */
+
+QFrame#workflow_drop_indicator {
+    background-color: #a78bfa;
+    border: none;
+    border-radius: 1px;
+}
+
+QFrame#workflow_drag_placeholder {
+    background-color: rgba(124, 92, 224, 12);
+    border: 1px dashed #454052;
+    border-radius: 9px;
+}
+
+
+/* =================================
+   WORKFLOW DASHBOARD - EMPTY STATE
+   ================================= */
+
+QLabel#workflow_empty_state {
+    color: #858b99;
+    font-size: 12pt;
+    padding: 40px;
+}
+
+
+/* =================================
+   SETTINGS PAGE
+   ================================= */
+
+QLabel#settings_page_title {
+    color: #e5e7eb;
+    font-size: 20pt;
+    font-weight: bold;
+}
+
+QLabel#settings_page_subtitle {
+    color: #858b99;
+    font-size: 10pt;
+}
+
+QLabel#settings_section_heading {
+    color: #e5e7eb;
+    font-size: 14pt;
+    font-weight: bold;
+}
+
+QLabel#settings_section_subtitle {
+    color: #858b99;
+    font-size: 9pt;
+}
+
+QFrame#settings_section {
+    background-color: #1d2028;
+    border: 1px solid #30343e;
+    border-radius: 9px;
+}
+
+QLabel#settings_label {
+    color: #e5e7eb;
+    font-size: 10pt;
+    font-weight: bold;
+}
+
+QLabel#settings_description {
+    color: #858b99;
+    font-size: 9pt;
+}
+
+QFrame#settings_divider {
+    background-color: #30343e;
+    border: none;
+}
+
+QLabel#settings_status {
+    color: #858b99;
+    font-size: 9pt;
+    padding-left: 2px;
+}
+
+/* Storage path fields */
+
+QLineEdit#settings_path_input {
+    background-color: #17191f;
+    color: #d5d8e0;
+    border: 1px solid #363b47;
+    border-radius: 6px;
+    padding: 0px 10px;
+    min-height: 32px;
+    max-height: 32px;
+    selection-background-color: #514477;
+}
+
+QLineEdit#settings_path_input:hover {
+    border-color: #51466e;
+}
+
+QLineEdit#settings_path_input:focus {
+    border-color: #7c5ce0;
+}
+
+/* Browse and Open buttons */
+
+QPushButton#settings_path_button {
+    background-color: #292d37;
+    color: #dfe1e8;
+    border: 1px solid #3b404d;
+    border-radius: 6px;
+    min-width: 68px;
+    max-width: 78px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0px 10px;
+    font-size: 9pt;
+    font-weight: bold;
+}
+
+QPushButton#settings_path_button:hover {
+    background-color: #343044;
+    border-color: #62527f;
+    color: #ffffff;
+}
+
+QPushButton#settings_path_button:pressed {
+    background-color: #403852;
+}

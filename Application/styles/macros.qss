@@ -1,0 +1,97 @@
+/* =================================
+   MACROS PAGE
+   ================================= */
+
+QFrame#macro_controls {
+    background-color: #20232b;
+    border: 1px solid #30343e;
+    border-radius: 9px;
+}
+
+QLabel#macro_section_heading {
+    color: #a78bfa;
+    font-size: 9pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+QLabel#macro_status {
+    color: #9298a6;
+    font-size: 9pt;
+}
+
+QFrame#macro_vertical_divider {
+    background-color: #30343e;
+    border: none;
+}
+
+QFrame#macro_panel {
+    background-color: #1d2028;
+    border: 1px solid #30343e;
+    border-radius: 9px;
+}
+
+QLabel#macro_panel_title {
+    color: #e5e7eb;
+    font-size: 13pt;
+    font-weight: bold;
+}
+
+QListWidget#macro_timeline,
+QListWidget#macro_library {
+    background-color: #17191f;
+    color: #e5e7eb;
+    border: 1px solid #30343e;
+    border-radius: 6px;
+    padding: 5px;
+    outline: none;
+}
+
+QListWidget#macro_timeline::item,
+QListWidget#macro_library::item {
+    padding: 9px 8px;
+    border-radius: 5px;
+    border: none;
+}
+
+QListWidget#macro_timeline::item:hover,
+QListWidget#macro_library::item:hover {
+    background-color: #292d38;
+}
+
+QListWidget#macro_timeline::item:selected,
+QListWidget#macro_library::item:selected {
+    background-color: #343044;
+    color: #c4b5fd;
+}
+
+QDoubleSpinBox#macro_spin,
+QSpinBox#macro_spin {
+    background-color: #17191f;
+    color: #e5e7eb;
+    border: 1px solid #3a3e49;
+    border-radius: 6px;
+    padding: 5px 8px;
+    min-height: 22px;
+}
+
+QDoubleSpinBox#macro_spin:focus,
+QSpinBox#macro_spin:focus {
+    border-color: #7c5ce0;
+}
+
+QDoubleSpinBox#macro_spin::up-button,
+QDoubleSpinBox#macro_spin::down-button,
+QSpinBox#macro_spin::up-button,
+QSpinBox#macro_spin::down-button {
+    width: 16px;
+    background-color: #292d38;
+    border: none;
+}
+
+QDoubleSpinBox#macro_spin::up-button:hover,
+QDoubleSpinBox#macro_spin::down-button:hover,
+QSpinBox#macro_spin::up-button:hover,
+QSpinBox#macro_spin::down-button:hover {
+    background-color: #403852;
+}

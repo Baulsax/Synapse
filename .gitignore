@@ -1,0 +1,47 @@
+
+# Python environments
+.venv/
+venv/
+env/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# PyInstaller generated files
+/build/launcher/Synapse/
+/build/work/
+/build/dist/
+
+# Node dependencies
+/Application/node_modules/
+
+# Application caches
+/Application/__pycache__/
+**/__pycache__/
+
+# Logs
+*.log
+logs/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Generated application executable
+/Synapse.exe
+
+# Operating system files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor settings
+.vscode/
+.idea/
