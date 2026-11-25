@@ -304,7 +304,6 @@ class SettingsPage(QWidget):
         storage_layout.setContentsMargins(18, 12, 18, 12)
         storage_layout.setSpacing(0)
 
-        # Workflows location.
         self.workflows_path_input = self._create_path_input()
 
         workflows_controls = self._create_path_controls(
@@ -323,7 +322,6 @@ class SettingsPage(QWidget):
 
         storage_layout.addWidget(self._create_divider())
 
-        # Logs location.
         self.logs_path_input = self._create_path_input()
 
         logs_controls = self._create_path_controls(
@@ -342,7 +340,6 @@ class SettingsPage(QWidget):
 
         storage_layout.addWidget(self._create_divider())
 
-        # Templates location.
         self.templates_path_input = self._create_path_input()
 
         templates_controls = self._create_path_controls(
@@ -828,10 +825,9 @@ class SettingsPage(QWidget):
             executable = Path(sys.executable).resolve()
 
         else:
-            project_directory = (
-                Path(__file__).resolve().parent.parent
-            )
-
+            # settings_page.py is inside Application/pages.
+            # The project root is two levels above Application.
+            project_directory = Path(__file__).resolve().parents[2]
             executable = project_directory / "Synapse.exe"
 
         if not executable.is_file():

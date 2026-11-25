@@ -1,3 +1,4 @@
+
 import sys
 import logging
 import ctypes
@@ -14,6 +15,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication
 
 from window import SynapseWindow
+
+from core.version import APP_VERSION
 
 from core.app_paths import (
     ensure_app_data_dirs,
@@ -118,7 +121,7 @@ app = QApplication(sys.argv)
 
 # Synapse application identity.
 app.setApplicationDisplayName("Synapse")
-app.setApplicationVersion("0.1.0")
+app.setApplicationVersion(APP_VERSION)
 app.setOrganizationName("Synapse")
 app.setApplicationName("Synapse")
 
@@ -127,6 +130,8 @@ ensure_app_data_dirs()
 
 # Initialize application logging.
 configure_logging()
+
+logging.info("Starting Synapse version %s.", APP_VERSION)
 
 # Load the application icon.
 icon_path = resource_path(Path("assets") / "synapse_logo.png")

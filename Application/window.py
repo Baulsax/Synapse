@@ -1,5 +1,9 @@
 
+import json
 import math
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -9,6 +13,7 @@ from PySide6.QtCore import (
     QUrl,
     QRect,
     QTimer,
+    Signal,
 )
 from PySide6.QtGui import (
     QPixmap,
@@ -39,7 +44,15 @@ from PySide6.QtWidgets import (
     QStylePainter,
 )
 
+from core.version import APP_VERSION
 from core.workflow_manager import WorkflowManager
+from core.update_manager import UpdateManager
+from core.update_dialog import UpdateDialog
+from core.update_controls import (
+    UpdateButton,
+    UpdateNotification,
+)
+
 from pages.workflows_page import WorkflowsPage
 from pages.macros_page import MacrosPage
 from pages.settings_page import SettingsPage
@@ -47,6 +60,62 @@ from pages.workflow_editor_page import WorkflowEditorPage
 
 
 BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/baulsax"
+
+# Five seconds while developing the updater.
+# Change to 60_000 for normal releases.
+UPDATE_CHECK_INTERVAL_MS = 5_000
+
+
+class SynapseWorkflowsPage(WorkflowsPage):
+    """
+    Workflows page that reports successfully persisted setting values
+    so an already-open Blockly editor can stay synchronized.
+    """
+
+    workflow_setting_saved = Signal(str, str, str)
+
+    def save_workflow_setting(
+        self,
+        workflow_name,
+        setting_id,
+        value
+    ):
+        super().save_workflow_setting(
+            workflow_name,
+            setting_id,
+            value
+        )
+
+        try:
+            _, workflow_data = self._load_workflow_data(
+                workflow_name
+            )
+
+            block = self._find_setting_block(
+                workflow_data,
+                setting_id
+            )
+
+            if block is None:
+                return
+
+            fields = block.get("fields", {})
+
+            if not isinstance(fields, dict):
+                return
+
+            stored_value = str(
+                fields.get("VALUE", "")
+            )
+
+            self.workflow_setting_saved.emit(
+                workflow_name,
+                setting_id,
+                stored_value
+            )
+
+        except Exception:
+            return
 
 
 class SidebarButton(QPushButton):
@@ -162,12 +231,9 @@ class SidebarButton(QPushButton):
         option = QStyleOptionButton()
         self.initStyleOption(option)
 
-        # The support button uses the same background appearance
-        # as a selected navigation button without actually selecting it.
         if self._is_support_button:
             option.state |= QStyle.StateFlag.State_On
 
-        # Draw the button background and interaction states.
         option.text = ""
         option.icon = QIcon()
 
@@ -177,8 +243,6 @@ class SidebarButton(QPushButton):
             option,
         )
 
-        # The animated highlight belongs to the background,
-        # so it doesn't interfere with the font or icon rendering.
         if self._is_support_button:
             self._paint_support_shine(painter)
 
@@ -197,7 +261,6 @@ class SidebarButton(QPushButton):
             self.height(),
         )
 
-        # Draw the icon.
         self._sidebar_icon.paint(
             painter,
             icon_rect,
@@ -208,8 +271,6 @@ class SidebarButton(QPushButton):
             ) else QIcon.State.Off,
         )
 
-        # Keep the normal font rendering while restoring bold
-        # styling for selected navigation buttons.
         font = self.font()
         font.setBold(
             self._is_support_button or self.isChecked()
@@ -314,23 +375,19 @@ def create_nav_icon(icon_type):
             painter.drawPath(gear_path)
 
         elif icon_type == "support":
-            # Coffee cup.
             painter.drawRoundedRect(
                 3.5, 8, 11, 8,
                 1.5, 1.5,
             )
 
-            # Cup handle.
             painter.drawArc(
                 12, 9, 5, 6,
                 -90 * 16,
                 180 * 16,
             )
 
-            # Coffee surface.
             painter.drawLine(5, 8, 13, 8)
 
-            # Steam.
             steam = QPainterPath()
             steam.moveTo(7, 6)
             steam.cubicTo(5, 4, 9, 3, 7, 1.5)
@@ -359,6 +416,16 @@ class SynapseWindow(QMainWindow):
         self._close_after_save = False
         self._runtime_shutdown = False
 
+        # Update state.
+        self._update_enabled = bool(
+            getattr(sys, "frozen", False)
+        )
+
+        self._update_release_data = None
+        self._update_staging_directory = None
+        self._update_download_in_progress = False
+        self._pending_update_action = None
+
         self.workflow_manager = WorkflowManager()
         self.input_manager = None
         self.macro_engine = macro_engine
@@ -369,6 +436,7 @@ class SynapseWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
+        self._central_widget = central
 
         main_layout = QHBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -425,7 +493,6 @@ class SynapseWindow(QMainWindow):
         branding_top_layout.setContentsMargins(0, 0, 0, 0)
         branding_top_layout.setSpacing(6)
 
-        # Logo image.
         logo_icon = QLabel()
         logo_icon.setObjectName("logo_icon")
         logo_icon.setFixedSize(60, 60)
@@ -449,7 +516,6 @@ class SynapseWindow(QMainWindow):
                 )
             )
 
-        # Wordmark.
         brand_text_container = QWidget()
         brand_text_container.setObjectName("brand_text_container")
 
@@ -598,11 +664,34 @@ class SynapseWindow(QMainWindow):
 
         content_layout.addWidget(support_divider_container)
 
-        # Version label.
-        version = QLabel("Version 0.1.0")
+        # Version label and update control.
+        version_row = QWidget()
+
+        version_layout = QHBoxLayout(version_row)
+        version_layout.setContentsMargins(0, 0, 0, 0)
+        version_layout.setSpacing(0)
+
+        version = QLabel(f"Version {APP_VERSION}")
         version.setObjectName("muted")
         version.setContentsMargins(4, 0, 0, 2)
-        content_layout.addWidget(version)
+
+        self.update_button = UpdateButton()
+
+        if not self._update_enabled:
+            self.update_button.setEnabled(False)
+            self.update_button.setToolTip(
+                "Updates are available in the installed version."
+            )
+
+        self.update_button.clicked_for_update.connect(
+            self.on_update_button_clicked
+        )
+
+        version_layout.addWidget(version)
+        version_layout.addStretch(1)
+        version_layout.addWidget(self.update_button)
+
+        content_layout.addWidget(version_row)
 
         sidebar_layout.addWidget(sidebar_content, 1)
 
@@ -616,8 +705,8 @@ class SynapseWindow(QMainWindow):
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.addWidget(self.pages)
 
-        # Workflows page
-        self.workflows_page = WorkflowsPage()
+        # Workflows page.
+        self.workflows_page = SynapseWorkflowsPage()
 
         self.workflows_page.workflow_opened.connect(
             self.open_workflow
@@ -631,6 +720,10 @@ class SynapseWindow(QMainWindow):
             self.delete_workflow_from_dashboard
         )
 
+        self.workflows_page.workflow_setting_saved.connect(
+            self.on_workflow_setting_saved
+        )
+
         self.pages.addWidget(self.workflows_page)
 
         # Connect manager lifecycle notifications.
@@ -642,11 +735,11 @@ class SynapseWindow(QMainWindow):
             self.refresh_dashboard_state
         )
 
-        # Macros page
+        # Macros page.
         self.macros_page = MacrosPage(self.macro_engine)
         self.pages.addWidget(self.macros_page)
 
-        # Settings page
+        # Settings page.
         self.settings_page = SettingsPage()
 
         self.settings_page.workflows_directory_changed.connect(
@@ -659,6 +752,430 @@ class SynapseWindow(QMainWindow):
         main_layout.addWidget(workspace, 1)
 
         self.refresh_dashboard_state()
+
+        # -------------------------
+        # Update overlay and notification
+        # -------------------------
+
+        self.update_dialog = UpdateDialog(
+            self._central_widget
+        )
+
+        self.update_dialog.download_requested.connect(
+            self.start_update_download
+        )
+
+        self.update_dialog.restart_requested.connect(
+            self.request_update_restart
+        )
+
+        self.update_dialog.install_on_exit_requested.connect(
+            self.request_update_on_exit
+        )
+
+        self.update_notification = UpdateNotification(
+            self._central_widget
+        )
+
+        self.update_notification.notification_clicked.connect(
+            self.open_update_dialog
+        )
+
+        self._position_update_controls()
+
+        # -------------------------
+        # Update manager
+        # -------------------------
+
+        self.update_manager = None
+
+        if self._update_enabled:
+            install_directory = Path(
+                sys.executable
+            ).resolve().parent
+
+            self.update_manager = UpdateManager(
+                APP_VERSION,
+                install_directory,
+                self,
+            )
+
+            self.update_manager.update_available.connect(
+                self.on_update_available
+            )
+
+            self.update_manager.up_to_date.connect(
+                self.on_up_to_date
+            )
+
+            self.update_manager.download_progress.connect(
+                self.on_update_download_progress
+            )
+
+            self.update_manager.download_finished.connect(
+                self.on_update_download_finished
+            )
+
+            self.update_manager.failed.connect(
+                self.on_update_failed
+            )
+
+            self.update_check_timer = QTimer(self)
+            self.update_check_timer.setInterval(
+                UPDATE_CHECK_INTERVAL_MS
+            )
+
+            self.update_check_timer.timeout.connect(
+                self.check_for_updates
+            )
+
+            # Check immediately, then periodically.
+            self.check_for_updates()
+            self.update_check_timer.start()
+
+    # ======================================
+    # UPDATE SYSTEM
+    # ======================================
+
+    def _get_valid_staging_directory(self):
+        """
+        Return the downloaded update directory only when its required
+        metadata files are present.
+
+        This lets the dialog restore its completed state after being
+        dismissed and reopened.
+        """
+
+        if not self._update_staging_directory:
+            return None
+
+        try:
+            staging = Path(
+                self._update_staging_directory
+            ).resolve()
+
+            if not staging.is_dir():
+                return None
+
+            if not (staging / "plan.json").is_file():
+                return None
+
+            if not (
+                staging / "update-manifest.json"
+            ).is_file():
+                return None
+
+            return staging
+
+        except (OSError, TypeError, ValueError):
+            return None
+
+    def check_for_updates(self):
+        if not self.update_manager:
+            return
+
+        self.update_manager.check_for_updates()
+
+    def on_update_button_clicked(self):
+        if not self.update_manager:
+            return
+
+        if self._update_release_data:
+            self.open_update_dialog()
+        else:
+            self.check_for_updates()
+
+    def on_update_available(self, metadata):
+        if not isinstance(metadata, dict):
+            return
+
+        self._update_release_data = metadata
+
+        new_version = metadata.get(
+            "version",
+            "unknown",
+        )
+
+        self.update_button.set_update_available(True)
+
+        self.update_notification.show_update(
+            new_version
+        )
+
+        self._position_update_controls()
+
+    def on_up_to_date(self, _version):
+        self._update_release_data = None
+
+        self.update_button.set_update_available(False)
+        self.update_notification.dismiss()
+
+    def open_update_dialog(self):
+        if not self._update_release_data:
+            self.check_for_updates()
+            return
+
+        metadata = self._update_release_data
+
+        self.update_dialog.show_update(
+            current_version=metadata.get(
+                "current_version",
+                APP_VERSION,
+            ),
+            new_version=metadata.get(
+                "version",
+                "unknown",
+            ),
+            package_size=metadata.get(
+                "package_size",
+                0,
+            ),
+            release_notes=metadata.get(
+                "release_notes",
+                "",
+            ),
+        )
+
+        if self._update_download_in_progress:
+            self.update_dialog.set_download_started()
+
+        elif self._get_valid_staging_directory():
+            self.update_dialog.set_download_complete()
+
+        self._position_update_controls()
+        self.update_dialog.raise_()
+
+    def start_update_download(self):
+        if not self.update_manager:
+            return
+
+        if self._update_download_in_progress:
+            return
+
+        # Do not download the same update again if a valid staged
+        # copy already exists.
+        if self._get_valid_staging_directory():
+            self.update_dialog.set_download_complete()
+            return
+
+        # Discard a stale staging reference before starting again.
+        self._update_staging_directory = None
+
+        started = self.update_manager.download_update()
+
+        if started:
+            self._update_download_in_progress = True
+
+            self.update_button.set_downloading(True)
+            self.update_dialog.set_download_started()
+
+    def on_update_download_progress(
+        self,
+        downloaded,
+        total,
+    ):
+        if not self._update_download_in_progress:
+            return
+
+        self.update_button.set_download_progress(
+            downloaded,
+            total,
+        )
+
+        self.update_dialog.set_download_progress(
+            downloaded,
+            total,
+        )
+
+    def on_update_download_finished(self, staging_directory):
+        self._update_download_in_progress = False
+
+        self._update_staging_directory = Path(
+            staging_directory
+        ).resolve()
+
+        self.update_button.set_downloading(False)
+
+        if self._get_valid_staging_directory():
+            self.update_dialog.set_download_complete()
+            self.update_notification.dismiss()
+        else:
+            self._update_staging_directory = None
+
+            self.update_dialog.set_error(
+                "The downloaded update could not be verified. "
+                "Please try downloading it again."
+            )
+
+    def on_update_failed(self, message):
+        was_downloading = self._update_download_in_progress
+
+        self._update_download_in_progress = False
+
+        self.update_button.set_downloading(False)
+
+        if was_downloading:
+            # A failed download must not leave a partial staging
+            # directory available as though it were complete.
+            self._update_staging_directory = None
+            self.update_dialog.set_error(message)
+
+    def request_update_restart(self):
+        if not self._get_valid_staging_directory():
+            self.update_dialog.set_error(
+                "The downloaded update could not be located. "
+                "Please download it again."
+            )
+            return
+
+        self._pending_update_action = "restart"
+        self.close()
+
+        # If the user cancels the unsaved-changes prompt,
+        # closeEvent clears this pending action.
+
+    def request_update_on_exit(self):
+        if not self._get_valid_staging_directory():
+            self.update_dialog.set_error(
+                "The downloaded update could not be located. "
+                "Please download it again."
+            )
+            return
+
+        self._pending_update_action = "exit"
+        self.close()
+
+    def _launch_update_helper(self):
+        """
+        Start the separately packaged updater helper.
+
+        The helper requests elevation and waits for this Synapse
+        process to exit before replacing installed application files.
+        """
+
+        if not self._update_enabled:
+            return False, "The updater is only available in installed builds."
+
+        install_directory = Path(
+            sys.executable
+        ).resolve().parent
+
+        helper_path = (
+            install_directory / "SynapseUpdater.exe"
+        )
+
+        if not helper_path.is_file():
+            return False, (
+                "The update helper is missing:\n\n"
+                f"{helper_path}\n\n"
+                "Please reinstall Synapse using the latest installer."
+            )
+
+        staging = self._get_valid_staging_directory()
+
+        if staging is None:
+            return False, (
+                "The downloaded update is incomplete. "
+                "Please download it again."
+            )
+
+        arguments = [
+            str(helper_path),
+            "--pid",
+            str(os.getpid()),
+            "--install-dir",
+            str(install_directory),
+        ]
+
+        if self._pending_update_action == "restart":
+            arguments.append("--restart")
+
+        try:
+            subprocess.Popen(
+                arguments,
+                cwd=str(install_directory),
+                close_fds=True,
+                creationflags=getattr(
+                    subprocess,
+                    "CREATE_NO_WINDOW",
+                    0,
+                ),
+            )
+
+            return True, ""
+
+        except Exception as error:
+            return False, (
+                "Could not start the update helper:\n\n"
+                f"{error}"
+            )
+
+    def _complete_pending_update_close(self, event):
+        """
+        Launch the helper only after the existing close confirmation
+        has been accepted.
+        """
+
+        if self._pending_update_action:
+            success, error = self._launch_update_helper()
+
+            if not success:
+                self._pending_update_action = None
+
+                QMessageBox.critical(
+                    self,
+                    "Update Could Not Start",
+                    error,
+                )
+
+                event.ignore()
+                return False
+
+        self.shutdown_runtime()
+        event.accept()
+        return True
+
+    # ======================================
+    # UPDATE CONTROL POSITIONING
+    # ======================================
+
+    def _position_update_controls(self):
+        if not hasattr(self, "_central_widget"):
+            return
+
+        rect = self._central_widget.rect()
+
+        if hasattr(self, "update_dialog"):
+            self.update_dialog.setGeometry(rect)
+
+        if (
+            hasattr(self, "update_notification")
+            and self.update_notification.isVisible()
+        ):
+            margin = 22
+
+            self.update_notification.adjustSize()
+
+            x = max(
+                margin,
+                rect.width()
+                - self.update_notification.width()
+                - margin,
+            )
+
+            y = max(
+                margin,
+                rect.height()
+                - self.update_notification.height()
+                - margin,
+            )
+
+            self.update_notification.move(x, y)
+            self.update_notification.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_update_controls()
 
     # ======================================
     # ACTIVITY AND STATUS
@@ -809,6 +1326,82 @@ class SynapseWindow(QMainWindow):
     def return_to_workflow_list(self):
         self.pages.setCurrentWidget(self.workflows_page)
         self.refresh_dashboard_state()
+
+    # ======================================
+    # WORKFLOW SETTINGS LIVE SYNCHRONIZATION
+    # ======================================
+
+    def on_workflow_setting_saved(
+        self,
+        workflow_name,
+        setting_id,
+        value
+    ):
+        """
+        Update the matching block in an already-open editor.
+
+        Blockly events are disabled during this external update so
+        the editor does not become dirty when the dashboard has
+        already persisted the setting to the workflow JSON file.
+        """
+
+        folder = Path(
+            self.workflows_page.save_folder
+        ).resolve()
+
+        editor_key = self._editor_key(
+            workflow_name,
+            folder
+        )
+
+        editor = self.workflow_editors.get(editor_key)
+
+        if editor is None:
+            return
+
+        block_id_json = json.dumps(str(setting_id))
+        value_json = json.dumps(str(value))
+
+        script = f"""
+        (() => {{
+            if (typeof Blockly === "undefined") {{
+                return false;
+            }}
+
+            const workspace = Blockly.getMainWorkspace();
+
+            if (!workspace) {{
+                return false;
+            }}
+
+            const block = workspace.getBlockById(
+                {block_id_json}
+            );
+
+            if (
+                !block ||
+                block.type !== "automation_workflow_setting"
+            ) {{
+                return false;
+            }}
+
+            Blockly.Events.disable();
+
+            try {{
+                block.setFieldValue(
+                    {value_json},
+                    "VALUE"
+                );
+            }}
+            finally {{
+                Blockly.Events.enable();
+            }}
+
+            return true;
+        }})();
+        """
+
+        editor.blockly_view.page().runJavaScript(script)
 
     # ======================================
     # DASHBOARD ACTIONS
@@ -997,13 +1590,11 @@ class SynapseWindow(QMainWindow):
         current_page = self.pages.currentWidget()
 
         if not isinstance(current_page, WorkflowEditorPage):
-            self.shutdown_runtime()
-            event.accept()
+            self._complete_pending_update_close(event)
             return
 
         if not current_page.bridge.is_dirty:
-            self.shutdown_runtime()
-            event.accept()
+            self._complete_pending_update_close(event)
             return
 
         dialog = QMessageBox(self)
@@ -1045,8 +1636,8 @@ class SynapseWindow(QMainWindow):
 
         elif clicked == discard_button:
 
-            self.shutdown_runtime()
-            event.accept()
+            self._complete_pending_update_close(event)
 
         else:
+            self._pending_update_action = None
             event.ignore()

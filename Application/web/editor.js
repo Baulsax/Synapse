@@ -833,7 +833,7 @@ Blockly.Blocks["automation_ui_button_clicked"] = {
 // ==========================================
 
 const workspace = Blockly.inject("blocklyDiv", {
-    media: "../node_modules/blockly/media/",
+    media: "vendor/blockly/media/",
 
     toolbox: {
         kind: "categoryToolbox",

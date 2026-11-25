@@ -17,6 +17,10 @@ __pycache__/
 /build/work/
 /build/dist/
 
+# Generated installer and release output
+/build/installer-output/
+/build/release-output/
+
 # Node dependencies
 /Application/node_modules/
 
