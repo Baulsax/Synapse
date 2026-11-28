@@ -1,3 +1,4 @@
+
 import hashlib
 import json
 import math
@@ -31,18 +32,11 @@ MAX_ARCHIVE_SIZE = 2 * 1024 * 1024 * 1024
 MAX_ARCHIVE_FILES = 10000
 MAX_COMPRESSION_RATIO = 1000
 
-# GitHub secondary rate limits should be given at least one minute
-# before retrying when no server-provided retry time is available.
 RATE_LIMIT_BASE_DELAY = 60
 RATE_LIMIT_MAX_DELAY = 6 * 60 * 60
 
-VERSION_PATTERN = re.compile(
-    r"^\d+\.\d+\.\d+$"
-)
-
-SHA256_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{64}$"
-)
+VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def get_update_staging_directory():
@@ -62,19 +56,12 @@ def parse_version(version):
     if not isinstance(version, str):
         raise ValueError("Invalid version format.")
 
-    match = VERSION_PATTERN.fullmatch(
-        version.strip()
-    )
+    match = VERSION_PATTERN.fullmatch(version.strip())
 
     if not match:
-        raise ValueError(
-            f"Invalid version number: {version}"
-        )
+        raise ValueError(f"Invalid version number: {version}")
 
-    return tuple(
-        int(part)
-        for part in match.groups()
-    )
+    return tuple(int(part) for part in match.groups())
 
 
 def is_newer_version(latest, current):
@@ -97,9 +84,7 @@ def calculate_sha256(path):
 
 
 def safe_relative_path(value):
-    """
-    Reject paths that could escape the application directory.
-    """
+    """Reject paths that could escape the application directory."""
 
     if not isinstance(value, str) or not value:
         raise ValueError("Invalid update file path.")
@@ -107,28 +92,20 @@ def safe_relative_path(value):
     normalized = value.replace("\\", "/")
 
     if normalized.startswith("/"):
-        raise ValueError(
-            "Absolute update paths are not allowed."
-        )
+        raise ValueError("Absolute update paths are not allowed.")
 
     if ":" in normalized:
-        raise ValueError(
-            "Drive-qualified paths are not allowed."
-        )
+        raise ValueError("Drive-qualified paths are not allowed.")
 
     parts = normalized.split("/")
 
     if any(part in ("", ".", "..") for part in parts):
-        raise ValueError(
-            "Unsafe update file path."
-        )
+        raise ValueError("Unsafe update file path.")
 
     path = PurePosixPath(normalized)
 
     if path.is_absolute():
-        raise ValueError(
-            "Absolute update paths are not allowed."
-        )
+        raise ValueError("Absolute update paths are not allowed.")
 
     return path
 
@@ -138,9 +115,7 @@ def open_url(url, timeout=REQUEST_TIMEOUT, accept=None):
         raise ValueError("Invalid URL.")
 
     if not url.startswith("https://"):
-        raise ValueError(
-            "Update URLs must use HTTPS."
-        )
+        raise ValueError("Update URLs must use HTTPS.")
 
     request = urllib.request.Request(
         url,
@@ -150,10 +125,7 @@ def open_url(url, timeout=REQUEST_TIMEOUT, accept=None):
         },
     )
 
-    return urllib.request.urlopen(
-        request,
-        timeout=timeout,
-    )
+    return urllib.request.urlopen(request, timeout=timeout)
 
 
 def validate_sha256(value, description):
@@ -170,9 +142,7 @@ def validate_sha256(value, description):
 
 def validate_file_list(files, description):
     if not isinstance(files, list):
-        raise ValueError(
-            f"Invalid {description} list."
-        )
+        raise ValueError(f"Invalid {description} list.")
 
     normalized = []
 
@@ -190,21 +160,15 @@ def validate_file_list(files, description):
 
 def validate_manifest(manifest, version):
     if not isinstance(manifest, dict):
-        raise ValueError(
-            "Update manifest is invalid."
-        )
+        raise ValueError("Update manifest is invalid.")
 
     if manifest.get("version") != version:
-        raise ValueError(
-            "Update manifest version mismatch."
-        )
+        raise ValueError("Update manifest version mismatch.")
 
     files = manifest.get("files")
 
     if not isinstance(files, dict):
-        raise ValueError(
-            "Update manifest has an invalid file list."
-        )
+        raise ValueError("Update manifest has an invalid file list.")
 
     normalized_files = {}
 
@@ -218,9 +182,7 @@ def validate_manifest(manifest, version):
             )
 
         if not isinstance(entry, dict):
-            raise ValueError(
-                f"Invalid manifest entry: {filename}"
-            )
+            raise ValueError(f"Invalid manifest entry: {filename}")
 
         size = entry.get("size")
 
@@ -234,10 +196,7 @@ def validate_manifest(manifest, version):
                 f"Invalid file size in manifest: {filename}"
             )
 
-        digest = validate_sha256(
-            entry.get("sha256"),
-            filename,
-        )
+        digest = validate_sha256(entry.get("sha256"), filename)
 
         normalized_files[normalized] = {
             "size": size,
@@ -249,9 +208,7 @@ def validate_manifest(manifest, version):
 
 def validate_metadata(metadata, version):
     if not isinstance(metadata, dict):
-        raise ValueError(
-            "Update metadata is invalid."
-        )
+        raise ValueError("Update metadata is invalid.")
 
     if metadata.get("version") != version:
         raise ValueError(
@@ -294,9 +251,7 @@ def validate_metadata(metadata, version):
         or package_size < 0
         or package_size > MAX_ARCHIVE_SIZE
     ):
-        raise ValueError(
-            "Invalid update package size."
-        )
+        raise ValueError("Invalid update package size.")
 
     metadata["package_sha256"] = validate_sha256(
         metadata["package_sha256"],
@@ -366,14 +321,10 @@ class UpdateWorker(QThread):
                 self._download_update()
 
             else:
-                raise ValueError(
-                    "Unknown updater operation."
-                )
+                raise ValueError("Unknown updater operation.")
 
         except urllib.error.HTTPError as error:
-            rate_limit = self._get_rate_limit_details(
-                error
-            )
+            rate_limit = self._get_rate_limit_details(error)
 
             if rate_limit is not None:
                 retry_after, server_directed = rate_limit
@@ -388,9 +339,7 @@ class UpdateWorker(QThread):
                     "Synapse will wait before trying again."
                 )
             else:
-                self.failed.emit(
-                    self._format_http_error(error)
-                )
+                self.failed.emit(self._format_http_error(error))
 
         except Exception as error:
             self.failed.emit(str(error))
@@ -468,7 +417,6 @@ class UpdateWorker(QThread):
         if not is_rate_limited:
             return None
 
-        # Retry-After takes priority when GitHub supplies it.
         if retry_after_header:
             try:
                 delay = float(retry_after_header)
@@ -482,30 +430,24 @@ class UpdateWorker(QThread):
                         retry_after_header
                     )
 
-                    delay = (
-                        retry_date.timestamp() - time.time()
-                    )
+                    delay = retry_date.timestamp() - time.time()
 
                     return max(1, math.ceil(delay)), True
 
                 except (TypeError, ValueError, OverflowError):
                     pass
 
-        # GitHub's primary rate-limit reset is an epoch timestamp.
         if is_primary_limit and reset:
             try:
                 reset_timestamp = float(reset)
 
                 if math.isfinite(reset_timestamp):
                     delay = reset_timestamp - time.time()
-
                     return max(1, math.ceil(delay)), True
 
             except (TypeError, ValueError):
                 pass
 
-        # No usable server retry time was supplied. The manager
-        # applies an exponential cooldown beginning at 60 seconds.
         return RATE_LIMIT_BASE_DELAY, False
 
     def _read_json_url(self, url):
@@ -514,9 +456,7 @@ class UpdateWorker(QThread):
             accept="application/vnd.github+json",
         ) as response:
 
-            raw = response.read(
-                MAX_METADATA_SIZE + 1
-            )
+            raw = response.read(MAX_METADATA_SIZE + 1)
 
         if len(raw) > MAX_METADATA_SIZE:
             raise ValueError(
@@ -524,9 +464,7 @@ class UpdateWorker(QThread):
             )
 
         try:
-            return json.loads(
-                raw.decode("utf-8")
-            )
+            return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ValueError(
                 "The update server returned invalid JSON."
@@ -548,21 +486,20 @@ class UpdateWorker(QThread):
             ):
                 url = asset.get("browser_download_url")
 
-                if not isinstance(url, str) or not url.startswith("https://"):
+                if (
+                    not isinstance(url, str)
+                    or not url.startswith("https://")
+                ):
                     raise ValueError(
                         f"Invalid download URL for {filename}."
                     )
 
                 return asset
 
-        raise ValueError(
-            f"Release is missing {filename}."
-        )
+        raise ValueError(f"Release is missing {filename}.")
 
     def _check_for_updates(self):
-        release = self._read_json_url(
-            GITHUB_API_URL
-        )
+        release = self._read_json_url(GITHUB_API_URL)
 
         if not isinstance(release, dict):
             raise ValueError(
@@ -595,10 +532,7 @@ class UpdateWorker(QThread):
             self.current_version,
         ):
             self.release_data = None
-
-            self.up_to_date.emit(
-                self.current_version
-            )
+            self.up_to_date.emit(self.current_version)
             return
 
         metadata_asset = self._find_release_asset(
@@ -633,27 +567,12 @@ class UpdateWorker(QThread):
             package_asset["browser_download_url"]
         )
 
-        metadata["release_url"] = release.get(
-            "html_url",
-            "",
-        )
-
-        metadata["release_notes"] = release.get(
-            "body",
-            "",
-        )
-
-        metadata["release_date"] = release.get(
-            "published_at",
-            "",
-        )
-
-        metadata["current_version"] = (
-            self.current_version
-        )
+        metadata["release_url"] = release.get("html_url", "")
+        metadata["release_notes"] = release.get("body", "")
+        metadata["release_date"] = release.get("published_at", "")
+        metadata["current_version"] = self.current_version
 
         self.release_data = metadata
-
         self.update_available.emit(metadata)
 
     def _download_to_file(
@@ -670,10 +589,11 @@ class UpdateWorker(QThread):
             exist_ok=True,
         )
 
-        if not isinstance(url, str) or not url.startswith("https://"):
-            raise ValueError(
-                "Invalid update download URL."
-            )
+        if (
+            not isinstance(url, str)
+            or not url.startswith("https://")
+        ):
+            raise ValueError("Invalid update download URL.")
 
         request = urllib.request.Request(
             url,
@@ -690,9 +610,7 @@ class UpdateWorker(QThread):
             timeout=DOWNLOAD_TIMEOUT,
         ) as response:
 
-            response_size = response.headers.get(
-                "Content-Length"
-            )
+            response_size = response.headers.get("Content-Length")
 
             if response_size:
                 try:
@@ -702,7 +620,10 @@ class UpdateWorker(QThread):
                         "The server returned an invalid download size."
                     )
 
-                if response_size < 0 or response_size > maximum_size:
+                if (
+                    response_size < 0
+                    or response_size > maximum_size
+                ):
                     raise ValueError(
                         "Download exceeds the allowed size."
                     )
@@ -720,9 +641,7 @@ class UpdateWorker(QThread):
 
             with open(destination, "wb") as output:
                 while True:
-                    chunk = response.read(
-                        1024 * 1024
-                    )
+                    chunk = response.read(1024 * 1024)
 
                     if not chunk:
                         break
@@ -764,10 +683,7 @@ class UpdateWorker(QThread):
                     "Update archive contains too many files."
                 )
 
-            relative = safe_relative_path(
-                entry.filename
-            )
-
+            relative = safe_relative_path(entry.filename)
             normalized = relative.as_posix()
 
             if normalized in entries:
@@ -775,7 +691,6 @@ class UpdateWorker(QThread):
                     "Update archive contains duplicate paths."
                 )
 
-            # Reject symbolic links and other non-regular entries.
             unix_mode = (entry.external_attr >> 16) & 0xFFFF
             file_type = unix_mode & 0o170000
 
@@ -789,7 +704,10 @@ class UpdateWorker(QThread):
                     "Encrypted update archives are not supported."
                 )
 
-            if entry.file_size < 0 or entry.file_size > MAX_ARCHIVE_SIZE:
+            if (
+                entry.file_size < 0
+                or entry.file_size > MAX_ARCHIVE_SIZE
+            ):
                 raise ValueError(
                     "An update archive file exceeds the allowed size."
                 )
@@ -832,21 +750,14 @@ class UpdateWorker(QThread):
             exist_ok=True,
         )
 
-        with zipfile.ZipFile(
-            archive_path,
-            "r",
-        ) as archive:
-
+        with zipfile.ZipFile(archive_path, "r") as archive:
             entries = self._validate_archive(
                 archive,
                 changed_files,
             )
 
             for filename in changed_files:
-                relative = safe_relative_path(
-                    filename
-                )
-
+                relative = safe_relative_path(filename)
                 entry = entries[filename]
 
                 if filename not in manifest_files:
@@ -862,8 +773,7 @@ class UpdateWorker(QThread):
                     )
 
                 destination = (
-                    payload_directory
-                    / Path(*relative.parts)
+                    payload_directory / Path(*relative.parts)
                 )
 
                 destination.parent.mkdir(
@@ -877,9 +787,7 @@ class UpdateWorker(QThread):
                 with archive.open(entry, "r") as source:
                     with open(destination, "wb") as output:
                         while True:
-                            chunk = source.read(
-                                1024 * 1024
-                            )
+                            chunk = source.read(1024 * 1024)
 
                             if not chunk:
                                 break
@@ -918,7 +826,6 @@ class UpdateWorker(QThread):
 
             metadata = self.release_data
 
-            # Remove only the updater's own staging directory.
             if staging.exists():
                 shutil.rmtree(staging)
 
@@ -937,9 +844,7 @@ class UpdateWorker(QThread):
                 maximum_size=MAX_ARCHIVE_SIZE,
             )
 
-            actual_hash = calculate_sha256(
-                archive_path
-            )
+            actual_hash = calculate_sha256(archive_path)
 
             if actual_hash != metadata["package_sha256"]:
                 raise ValueError(
@@ -958,14 +863,11 @@ class UpdateWorker(QThread):
             changed_files = metadata["changed_files"]
             deleted_files = metadata["deleted_files"]
 
-            # The manifest must describe the exact new file set.
             if set(changed_files) - set(manifest_files):
                 raise ValueError(
                     "The update contains files missing from its manifest."
                 )
 
-            # Verify that the update plan does not list any path as both
-            # changed and deleted.
             if set(changed_files) & set(deleted_files):
                 raise ValueError(
                     "The update contains conflicting file operations."
@@ -985,11 +887,7 @@ class UpdateWorker(QThread):
                 "w",
                 encoding="utf-8",
             ) as file:
-                json.dump(
-                    manifest,
-                    file,
-                    indent=2,
-                )
+                json.dump(manifest, file, indent=2)
 
             plan = {
                 "version": metadata["version"],
@@ -1003,21 +901,13 @@ class UpdateWorker(QThread):
                 "w",
                 encoding="utf-8",
             ) as file:
-                json.dump(
-                    plan,
-                    file,
-                    indent=2,
-                )
+                json.dump(plan, file, indent=2)
 
             archive_path.unlink()
 
-            self.download_finished.emit(
-                str(staging)
-            )
+            self.download_finished.emit(str(staging))
 
         except Exception:
-            # Do not leave a partial update that could be mistaken
-            # for a completed download.
             if staging.exists():
                 try:
                     shutil.rmtree(staging)
@@ -1058,8 +948,6 @@ class UpdateManager(QObject):
         self._worker = None
         self._release_data = None
 
-        # Rate-limit cooldown is tracked with monotonic time so
-        # system clock adjustments cannot shorten the wait.
         self._check_cooldown_until = 0.0
         self._rate_limit_failures = 0
 
@@ -1108,13 +996,11 @@ class UpdateManager(QObject):
 
     def _on_update_available(self, metadata):
         self._clear_rate_limit_cooldown()
-
         self._release_data = metadata
         self.update_available.emit(metadata)
 
     def _on_up_to_date(self, version):
         self._clear_rate_limit_cooldown()
-
         self._release_data = None
         self.up_to_date.emit(version)
 
@@ -1128,10 +1014,7 @@ class UpdateManager(QObject):
         server_directed,
     ):
         if server_directed:
-            delay = max(
-                1,
-                int(retry_after_seconds),
-            )
+            delay = max(1, int(retry_after_seconds))
         else:
             delay = min(
                 RATE_LIMIT_MAX_DELAY,
@@ -1141,29 +1024,60 @@ class UpdateManager(QObject):
 
             self._rate_limit_failures += 1
 
-        self._check_cooldown_until = (
-            time.monotonic() + delay
-        )
+        self._check_cooldown_until = time.monotonic() + delay
 
     def get_check_cooldown_remaining(self):
-        """
-        Return the remaining update-check cooldown in seconds.
-
-        Returns zero when another check is allowed.
-        """
+        """Return remaining cooldown seconds, or zero when a check is allowed."""
 
         remaining = (
-            self._check_cooldown_until
-            - time.monotonic()
+            self._check_cooldown_until - time.monotonic()
         )
 
         return max(0, math.ceil(remaining))
 
+    @staticmethod
+    def _format_wait_time(seconds):
+        seconds = max(0, int(seconds))
+
+        if seconds >= 3600:
+            hours, remainder = divmod(seconds, 3600)
+            minutes = math.ceil(remainder / 60)
+
+            if minutes >= 60:
+                hours += 1
+                minutes = 0
+
+            if minutes:
+                return f"{hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
+
+            return f"{hours} hour{'s' if hours != 1 else ''}"
+
+        if seconds >= 60:
+            minutes = math.ceil(seconds / 60)
+            return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+        return f"{seconds} second{'s' if seconds != 1 else ''}"
+
     def check_for_updates(self):
-        if self.get_check_cooldown_remaining() > 0:
+        remaining = self.get_check_cooldown_remaining()
+
+        if remaining > 0:
+            wait_time = self._format_wait_time(remaining)
+
+            self.failed.emit(
+                "GitHub has temporarily limited update checks. "
+                f"Please try again in {wait_time}."
+            )
             return False
 
-        return self._start_worker("check")
+        if not self._start_worker("check"):
+            self.failed.emit(
+                "An update operation is already in progress. "
+                "Please wait for it to finish before checking again."
+            )
+            return False
+
+        return True
 
     def download_update(self):
         if not self._release_data:
@@ -1176,6 +1090,9 @@ class UpdateManager(QObject):
             self._worker is not None
             and self._worker.isRunning()
         ):
+            self.failed.emit(
+                "Another update operation is already in progress."
+            )
             return False
 
         worker = UpdateWorker(

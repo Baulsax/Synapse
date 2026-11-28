@@ -11,6 +11,7 @@ from PySide6.QtCore import (
     QPointF,
     QUrl,
     QRect,
+    QRectF,
     QTimer,
     Signal,
 )
@@ -23,7 +24,6 @@ from PySide6.QtGui import (
     QPainterPath,
     QPolygonF,
     QFont,
-    QPalette,
     QDesktopServices,
     QLinearGradient,
 )
@@ -47,21 +47,16 @@ from core.version import APP_VERSION
 from core.workflow_manager import WorkflowManager
 from core.update_manager import UpdateManager
 from core.update_dialog import UpdateDialog
-from core.update_controls import (
-    UpdateButton,
-    UpdateNotification,
-)
+from core.update_controls import UpdateNotification
 
 from pages.workflows_page import WorkflowsPage
 from pages.macros_page import MacrosPage
 from pages.settings_page import SettingsPage
 from pages.workflow_editor_page import WorkflowEditorPage
+from pages.updates_page import UpdatesPage
 
 
 BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/baulsax"
-
-# Check immediately on startup, then every five minutes.
-UPDATE_CHECK_INTERVAL_MS = 300_000
 
 
 class SynapseWorkflowsPage(WorkflowsPage):
@@ -124,17 +119,20 @@ class SidebarButton(QPushButton):
 
         self._label_text = text
         self._sidebar_icon = icon
+
         self._is_support_button = text == "Support Me"
+        self._is_updates_button = text == "Updates"
 
         self._shine_offset = -180
         self._shine_paused = False
+        self._update_available = False
 
         self.setObjectName("nav_button")
         self.setCheckable(True)
         self.setFixedHeight(42)
         self.setIcon(QIcon())
 
-        if self._is_support_button:
+        if self._is_support_button or self._is_updates_button:
             self._shine_timer = QTimer(self)
             self._shine_timer.setInterval(25)
             self._shine_timer.timeout.connect(
@@ -148,9 +146,41 @@ class SidebarButton(QPushButton):
                 self._resume_shine
             )
 
+        if self._is_support_button:
             self._shine_timer.start()
 
+    def set_update_available(self, available):
+        if not self._is_updates_button:
+            return
+
+        available = bool(available)
+
+        if self._update_available == available:
+            return
+
+        self._update_available = available
+        self._shine_offset = -180
+        self._shine_paused = False
+
+        self._shine_pause_timer.stop()
+
+        # Keep the icon palette in sync with the full button state.
+        self._sidebar_icon = create_nav_icon(
+            "updates",
+            gold=available,
+        )
+
+        if available:
+            self._shine_timer.start()
+        else:
+            self._shine_timer.stop()
+
+        self.update()
+
     def _advance_shine(self):
+        if self._is_updates_button and not self._update_available:
+            return
+
         if self._shine_paused:
             return
 
@@ -166,12 +196,16 @@ class SidebarButton(QPushButton):
         self.update()
 
     def _resume_shine(self):
+        if self._is_updates_button and not self._update_available:
+            return
+
         self._shine_paused = False
         self._shine_timer.start()
         self.update()
 
-    def _paint_support_shine(self, painter):
-        """Paint a diagonal moving highlight over the selected-style background."""
+    def _paint_shine(self, painter):
+        """Paint the moving highlight over the button background."""
+
         painter.save()
 
         button_rect = QRect(
@@ -190,6 +224,23 @@ class SidebarButton(QPushButton):
 
         painter.setClipPath(clip_path)
 
+        if self._is_updates_button:
+            colors = (
+                QColor(255, 190, 75, 0),
+                QColor(255, 190, 75, 28),
+                QColor(255, 221, 145, 105),
+                QColor(255, 190, 75, 28),
+                QColor(255, 190, 75, 0),
+            )
+        else:
+            colors = (
+                QColor(185, 162, 255, 0),
+                QColor(185, 162, 255, 22),
+                QColor(235, 225, 255, 75),
+                QColor(185, 162, 255, 22),
+                QColor(185, 162, 255, 0),
+            )
+
         gradient = QLinearGradient(
             self._shine_offset,
             self.height(),
@@ -197,31 +248,45 @@ class SidebarButton(QPushButton):
             0,
         )
 
-        gradient.setColorAt(
-            0.0,
-            QColor(185, 162, 255, 0),
-        )
-        gradient.setColorAt(
-            0.35,
-            QColor(185, 162, 255, 22),
-        )
-        gradient.setColorAt(
-            0.5,
-            QColor(235, 225, 255, 75),
-        )
-        gradient.setColorAt(
-            0.65,
-            QColor(185, 162, 255, 22),
-        )
-        gradient.setColorAt(
-            1.0,
-            QColor(185, 162, 255, 0),
-        )
+        for position, color in zip(
+            (0.0, 0.35, 0.5, 0.65, 1.0),
+            colors,
+        ):
+            gradient.setColorAt(position, color)
 
         painter.fillRect(
             button_rect,
             gradient,
         )
+
+        painter.restore()
+
+    def _paint_update_background(self, painter):
+        """Paint the full gold state used when an update is available."""
+
+        painter.save()
+
+        rect = QRectF(
+            1,
+            1,
+            self.width() - 2,
+            self.height() - 2,
+        )
+
+        gradient = QLinearGradient(
+            0,
+            rect.top(),
+            0,
+            rect.bottom(),
+        )
+
+        gradient.setColorAt(0.0, QColor("#70552e"))
+        gradient.setColorAt(0.5, QColor("#624a29"))
+        gradient.setColorAt(1.0, QColor("#513e25"))
+
+        painter.setPen(QPen(QColor("#92703d"), 1))
+        painter.setBrush(gradient)
+        painter.drawRoundedRect(rect, 6, 6)
 
         painter.restore()
 
@@ -241,8 +306,12 @@ class SidebarButton(QPushButton):
             option,
         )
 
-        if self._is_support_button:
-            self._paint_support_shine(painter)
+        if self._is_updates_button and self._update_available:
+            self._paint_update_background(painter)
+            self._paint_shine(painter)
+
+        elif self._is_support_button:
+            self._paint_shine(painter)
 
         icon_size = 19
         icon_rect = QRect(
@@ -271,15 +340,28 @@ class SidebarButton(QPushButton):
 
         font = self.font()
         font.setBold(
-            self._is_support_button or self.isChecked()
+            self._is_support_button
+            or self.isChecked()
+            or (
+                self._is_updates_button
+                and self._update_available
+            )
         )
 
         painter.setFont(font)
 
-        if self._is_support_button or self.isChecked():
+        if self._is_support_button:
             text_color = QColor("#b9a2ff")
+
+        elif self._is_updates_button and self._update_available:
+            text_color = QColor("#ffe0a3")
+
+        elif self.isChecked():
+            text_color = QColor("#b9a2ff")
+
         elif self.underMouse():
             text_color = QColor("#e5e7eb")
+
         else:
             text_color = QColor("#aeb3c0")
 
@@ -293,8 +375,9 @@ class SidebarButton(QPushButton):
         )
 
 
-def create_nav_icon(icon_type):
+def create_nav_icon(icon_type, gold=False):
     """Create minimal navigation icons for the sidebar."""
+
     icon = QIcon()
 
     for color, state in (
@@ -303,6 +386,9 @@ def create_nav_icon(icon_type):
     ):
         if icon_type == "support":
             color = "#b9a2ff"
+
+        elif icon_type == "updates" and gold:
+            color = "#f4c36e"
 
         pixmap = QPixmap(20, 20)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -371,6 +457,44 @@ def create_nav_icon(icon_type):
             )
 
             painter.drawPath(gear_path)
+
+        elif icon_type == "updates":
+            # A single smooth refresh arc.
+            refresh_path = QPainterPath()
+            refresh_path.moveTo(5.0, 5.1)
+            refresh_path.cubicTo(
+                7.2, 2.8,
+                11.1, 2.4,
+                14.0, 4.3,
+            )
+            refresh_path.cubicTo(
+                17.2, 6.3,
+                18.1, 10.2,
+                16.3, 13.5,
+            )
+            refresh_path.cubicTo(
+                14.5, 16.8,
+                10.7, 18.0,
+                7.3, 16.5,
+            )
+            refresh_path.cubicTo(
+                4.1, 15.1,
+                2.6, 11.7,
+                3.5, 8.4,
+            )
+
+            painter.drawPath(refresh_path)
+
+            # Arrowhead follows the tangent at the arc's endpoint.
+            arrow = QPolygonF([
+                QPointF(3.5, 8.4),
+                QPointF(3.0, 12.1),
+                QPointF(6.7, 9.8),
+            ])
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(color))
+            painter.drawPolygon(arrow)
 
         elif icon_type == "support":
             painter.drawRoundedRect(
@@ -623,6 +747,31 @@ class SynapseWindow(QMainWindow):
         content_layout.addStretch()
 
         # -------------------------
+        # Updates navigation button
+        # -------------------------
+
+        self.updates_nav_button = SidebarButton(
+            "Updates",
+            create_nav_icon("updates"),
+        )
+
+        self.updates_nav_button.setToolTip(
+            "View updates and release notes"
+        )
+
+        self.updates_nav_button.clicked.connect(
+            lambda: self.navigate_to_page(3)
+        )
+
+        button_group.addButton(
+            self.updates_nav_button
+        )
+
+        content_layout.addWidget(
+            self.updates_nav_button
+        )
+
+        # -------------------------
         # Support button
         # -------------------------
 
@@ -644,54 +793,55 @@ class SynapseWindow(QMainWindow):
 
         content_layout.addWidget(support_button)
 
-        # Divider between Support Me and the version label.
-        support_divider_container = QWidget()
-        support_divider_container.setFixedHeight(1)
-
-        support_divider_layout = QHBoxLayout(
-            support_divider_container
-        )
-        support_divider_layout.setContentsMargins(0, 0, 0, 0)
-        support_divider_layout.setSpacing(0)
-
-        support_divider = QFrame()
-        support_divider.setObjectName("sidebar_divider")
-        support_divider.setFixedHeight(1)
-
-        support_divider_layout.addWidget(support_divider)
-
-        content_layout.addWidget(support_divider_container)
-
-        # Version label and update control.
-        version_row = QWidget()
-
-        version_layout = QHBoxLayout(version_row)
-        version_layout.setContentsMargins(0, 0, 0, 0)
-        version_layout.setSpacing(0)
-
-        version = QLabel(f"Version {APP_VERSION}")
-        version.setObjectName("muted")
-        version.setContentsMargins(4, 0, 0, 2)
-
-        self.update_button = UpdateButton()
-
-        if not self._update_enabled:
-            self.update_button.setEnabled(False)
-            self.update_button.setToolTip(
-                "Updates are available in the installed version."
-            )
-
-        self.update_button.clicked_for_update.connect(
-            self.on_update_button_clicked
-        )
-
-        version_layout.addWidget(version)
-        version_layout.addStretch(1)
-        version_layout.addWidget(self.update_button)
-
-        content_layout.addWidget(version_row)
-
         sidebar_layout.addWidget(sidebar_content, 1)
+
+        # -------------------------
+        # Version footer
+        # -------------------------
+
+        version_divider_container = QWidget()
+        version_divider_container.setFixedHeight(1)
+
+        version_divider_layout = QHBoxLayout(
+            version_divider_container
+        )
+        version_divider_layout.setContentsMargins(
+            12, 0, 12, 0
+        )
+        version_divider_layout.setSpacing(0)
+
+        version_divider = QFrame()
+        version_divider.setObjectName("sidebar_divider")
+        version_divider.setFixedHeight(1)
+
+        version_divider_layout.addWidget(version_divider)
+
+        sidebar_layout.addWidget(
+            version_divider_container
+        )
+
+        version_label = QLabel(
+            f"Version {APP_VERSION}"
+        )
+        version_label.setObjectName("sidebar_version")
+        version_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft
+            | Qt.AlignmentFlag.AlignVCenter
+        )
+        version_label.setContentsMargins(
+            16, 0, 12, 0
+        )
+        version_label.setFixedHeight(34)
+        version_label.setStyleSheet("""
+            QLabel#sidebar_version {
+                color: #858995;
+                background: transparent;
+                font-size: 9pt;
+                padding: 0;
+            }
+        """)
+
+        sidebar_layout.addWidget(version_label)
 
         # -------------------------
         # Main workspace
@@ -745,6 +895,26 @@ class SynapseWindow(QMainWindow):
         )
 
         self.pages.addWidget(self.settings_page)
+
+        # Updates page.
+        self.updates_page = UpdatesPage(APP_VERSION)
+
+        self.updates_page.check_requested.connect(
+            self.check_for_updates
+        )
+
+        self.updates_page.update_details_requested.connect(
+            self.open_update_dialog
+        )
+
+        if not self._update_enabled:
+            self.updates_page.set_unavailable(
+                "Update checking and installation are available "
+                "in the installed version of Synapse. Install Synapse "
+                "using its setup program to use the updater."
+            )
+
+        self.pages.addWidget(self.updates_page)
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(workspace, 1)
@@ -818,18 +988,9 @@ class SynapseWindow(QMainWindow):
                 self.on_update_failed
             )
 
-            self.update_check_timer = QTimer(self)
-            self.update_check_timer.setInterval(
-                UPDATE_CHECK_INTERVAL_MS
-            )
-
-            self.update_check_timer.timeout.connect(
-                self.check_for_updates
-            )
-
-            # Check immediately, then periodically.
+            # Exactly one update check when the installed app launches.
+            self.updates_page.set_checking()
             self.check_for_updates()
-            self.update_check_timer.start()
 
     # ======================================
     # UPDATE SYSTEM
@@ -872,16 +1033,12 @@ class SynapseWindow(QMainWindow):
         if not self.update_manager:
             return
 
+        self.updates_page.set_checking()
+
+        # The manager emits a failure signal if the request is blocked
+        # by a cooldown or another active update operation.
+        # That signal restores the page's enabled Try Again button.
         self.update_manager.check_for_updates()
-
-    def on_update_button_clicked(self):
-        if not self.update_manager:
-            return
-
-        if self._update_release_data:
-            self.open_update_dialog()
-        else:
-            self.check_for_updates()
 
     def on_update_available(self, metadata):
         if not isinstance(metadata, dict):
@@ -894,7 +1051,11 @@ class SynapseWindow(QMainWindow):
             "unknown",
         )
 
-        self.update_button.set_update_available(True)
+        self.updates_page.set_update_available(
+            metadata
+        )
+
+        self.updates_nav_button.set_update_available(True)
 
         self.update_notification.show_update(
             new_version
@@ -902,10 +1063,14 @@ class SynapseWindow(QMainWindow):
 
         self._position_update_controls()
 
-    def on_up_to_date(self, _version):
+    def on_up_to_date(self, version):
         self._update_release_data = None
 
-        self.update_button.set_update_available(False)
+        self.updates_page.set_up_to_date(
+            version or APP_VERSION
+        )
+
+        self.updates_nav_button.set_update_available(False)
         self.update_notification.dismiss()
 
     def open_update_dialog(self):
@@ -950,13 +1115,11 @@ class SynapseWindow(QMainWindow):
         if self._update_download_in_progress:
             return
 
-        # Do not download the same update again if a valid staged
-        # copy already exists.
         if self._get_valid_staging_directory():
             self.update_dialog.set_download_complete()
+            self.updates_page.set_download_complete()
             return
 
-        # Discard a stale staging reference before starting again.
         self._update_staging_directory = None
 
         started = self.update_manager.download_update()
@@ -964,7 +1127,7 @@ class SynapseWindow(QMainWindow):
         if started:
             self._update_download_in_progress = True
 
-            self.update_button.set_downloading(True)
+            self.updates_page.set_download_started()
             self.update_dialog.set_download_started()
 
     def on_update_download_progress(
@@ -975,7 +1138,7 @@ class SynapseWindow(QMainWindow):
         if not self._update_download_in_progress:
             return
 
-        self.update_button.set_download_progress(
+        self.updates_page.set_download_progress(
             downloaded,
             total,
         )
@@ -992,13 +1155,17 @@ class SynapseWindow(QMainWindow):
             staging_directory
         ).resolve()
 
-        self.update_button.set_downloading(False)
-
         if self._get_valid_staging_directory():
             self.update_dialog.set_download_complete()
+            self.updates_page.set_download_complete()
             self.update_notification.dismiss()
         else:
             self._update_staging_directory = None
+
+            self.updates_page.set_download_failed(
+                "The downloaded update could not be verified. "
+                "Please try downloading it again."
+            )
 
             self.update_dialog.set_error(
                 "The downloaded update could not be verified. "
@@ -1010,13 +1177,14 @@ class SynapseWindow(QMainWindow):
 
         self._update_download_in_progress = False
 
-        self.update_button.set_downloading(False)
-
         if was_downloading:
-            # A failed download must not leave a partial staging
-            # directory available as though it were complete.
             self._update_staging_directory = None
+
+            self.updates_page.set_download_failed(message)
             self.update_dialog.set_error(message)
+
+        else:
+            self.updates_page.set_check_failed(message)
 
     def request_update_restart(self):
         if not self._get_valid_staging_directory():
@@ -1028,9 +1196,6 @@ class SynapseWindow(QMainWindow):
 
         self._pending_update_action = "restart"
         self.close()
-
-        # If the user cancels the unsaved-changes prompt,
-        # closeEvent clears this pending action.
 
     def request_update_on_exit(self):
         if not self._get_valid_staging_directory():
@@ -1052,7 +1217,9 @@ class SynapseWindow(QMainWindow):
         """
 
         if not self._update_enabled:
-            return False, "The updater is only available in installed builds."
+            return False, (
+                "The updater is only available in installed builds."
+            )
 
         install_directory = Path(
             sys.executable
