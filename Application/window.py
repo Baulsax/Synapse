@@ -1,4 +1,3 @@
-
 import json
 import math
 import os
@@ -61,9 +60,8 @@ from pages.workflow_editor_page import WorkflowEditorPage
 
 BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/baulsax"
 
-# Five seconds while developing the updater.
-# Change to 60_000 for normal releases.
-UPDATE_CHECK_INTERVAL_MS = 5_000
+# Check immediately on startup, then every five minutes.
+UPDATE_CHECK_INTERVAL_MS = 300_000
 
 
 class SynapseWorkflowsPage(WorkflowsPage):

@@ -1,12 +1,15 @@
-
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
+from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QObject, QThread, Signal
@@ -27,6 +30,11 @@ MAX_METADATA_SIZE = 5 * 1024 * 1024
 MAX_ARCHIVE_SIZE = 2 * 1024 * 1024 * 1024
 MAX_ARCHIVE_FILES = 10000
 MAX_COMPRESSION_RATIO = 1000
+
+# GitHub secondary rate limits should be given at least one minute
+# before retrying when no server-provided retry time is available.
+RATE_LIMIT_BASE_DELAY = 60
+RATE_LIMIT_MAX_DELAY = 6 * 60 * 60
 
 VERSION_PATTERN = re.compile(
     r"^\d+\.\d+\.\d+$"
@@ -324,6 +332,9 @@ class UpdateWorker(QThread):
     download_progress = Signal(int, int)
     download_finished = Signal(str)
 
+    # retry_after_seconds, server_directed
+    rate_limited = Signal(int, bool)
+
     failed = Signal(str)
 
     def __init__(
@@ -359,8 +370,143 @@ class UpdateWorker(QThread):
                     "Unknown updater operation."
                 )
 
+        except urllib.error.HTTPError as error:
+            rate_limit = self._get_rate_limit_details(
+                error
+            )
+
+            if rate_limit is not None:
+                retry_after, server_directed = rate_limit
+
+                self.rate_limited.emit(
+                    retry_after,
+                    server_directed,
+                )
+
+                self.failed.emit(
+                    "GitHub has temporarily rate-limited update requests. "
+                    "Synapse will wait before trying again."
+                )
+            else:
+                self.failed.emit(
+                    self._format_http_error(error)
+                )
+
         except Exception as error:
             self.failed.emit(str(error))
+
+    @staticmethod
+    def _format_http_error(error):
+        status = getattr(error, "code", None)
+        reason = getattr(error, "reason", None)
+
+        if status is not None:
+            if reason:
+                return f"Update server returned HTTP {status}: {reason}"
+
+            return f"Update server returned HTTP {status}."
+
+        return str(error)
+
+    @staticmethod
+    def _get_rate_limit_details(error):
+        """
+        Identify GitHub primary and secondary rate limits.
+
+        Returns:
+            (delay_seconds, server_directed), or None when the
+            response does not appear to be a rate-limit response.
+        """
+
+        status = getattr(error, "code", None)
+        headers = error.headers
+
+        remaining = headers.get(
+            "X-RateLimit-Remaining",
+            "",
+        ).strip()
+
+        reset = headers.get(
+            "X-RateLimit-Reset",
+            "",
+        ).strip()
+
+        retry_after_header = headers.get(
+            "Retry-After",
+            "",
+        ).strip()
+
+        try:
+            body = error.read(64 * 1024).decode(
+                "utf-8",
+                errors="replace",
+            )
+        except Exception:
+            body = ""
+
+        body_lower = body.lower()
+
+        is_primary_limit = remaining == "0"
+
+        is_secondary_limit = (
+            "secondary rate limit" in body_lower
+            or "rate limit exceeded" in body_lower
+            or "rate limit" in body_lower
+        )
+
+        is_rate_limited = (
+            status == 429
+            or (
+                status == 403
+                and (
+                    is_primary_limit
+                    or is_secondary_limit
+                )
+            )
+        )
+
+        if not is_rate_limited:
+            return None
+
+        # Retry-After takes priority when GitHub supplies it.
+        if retry_after_header:
+            try:
+                delay = float(retry_after_header)
+
+                if math.isfinite(delay) and delay >= 0:
+                    return max(1, math.ceil(delay)), True
+
+            except (TypeError, ValueError):
+                try:
+                    retry_date = parsedate_to_datetime(
+                        retry_after_header
+                    )
+
+                    delay = (
+                        retry_date.timestamp() - time.time()
+                    )
+
+                    return max(1, math.ceil(delay)), True
+
+                except (TypeError, ValueError, OverflowError):
+                    pass
+
+        # GitHub's primary rate-limit reset is an epoch timestamp.
+        if is_primary_limit and reset:
+            try:
+                reset_timestamp = float(reset)
+
+                if math.isfinite(reset_timestamp):
+                    delay = reset_timestamp - time.time()
+
+                    return max(1, math.ceil(delay)), True
+
+            except (TypeError, ValueError):
+                pass
+
+        # No usable server retry time was supplied. The manager
+        # applies an exponential cooldown beginning at 60 seconds.
+        return RATE_LIMIT_BASE_DELAY, False
 
     def _read_json_url(self, url):
         with open_url(
@@ -912,6 +1058,11 @@ class UpdateManager(QObject):
         self._worker = None
         self._release_data = None
 
+        # Rate-limit cooldown is tracked with monotonic time so
+        # system clock adjustments cannot shorten the wait.
+        self._check_cooldown_until = 0.0
+        self._rate_limit_failures = 0
+
     def _start_worker(self, operation):
         if (
             self._worker is not None
@@ -934,6 +1085,10 @@ class UpdateManager(QObject):
             self._on_up_to_date
         )
 
+        worker.rate_limited.connect(
+            self._on_rate_limited
+        )
+
         worker.download_progress.connect(
             self.download_progress.emit
         )
@@ -952,14 +1107,62 @@ class UpdateManager(QObject):
         return True
 
     def _on_update_available(self, metadata):
+        self._clear_rate_limit_cooldown()
+
         self._release_data = metadata
         self.update_available.emit(metadata)
 
     def _on_up_to_date(self, version):
+        self._clear_rate_limit_cooldown()
+
         self._release_data = None
         self.up_to_date.emit(version)
 
+    def _clear_rate_limit_cooldown(self):
+        self._check_cooldown_until = 0.0
+        self._rate_limit_failures = 0
+
+    def _on_rate_limited(
+        self,
+        retry_after_seconds,
+        server_directed,
+    ):
+        if server_directed:
+            delay = max(
+                1,
+                int(retry_after_seconds),
+            )
+        else:
+            delay = min(
+                RATE_LIMIT_MAX_DELAY,
+                RATE_LIMIT_BASE_DELAY
+                * (2 ** self._rate_limit_failures),
+            )
+
+            self._rate_limit_failures += 1
+
+        self._check_cooldown_until = (
+            time.monotonic() + delay
+        )
+
+    def get_check_cooldown_remaining(self):
+        """
+        Return the remaining update-check cooldown in seconds.
+
+        Returns zero when another check is allowed.
+        """
+
+        remaining = (
+            self._check_cooldown_until
+            - time.monotonic()
+        )
+
+        return max(0, math.ceil(remaining))
+
     def check_for_updates(self):
+        if self.get_check_cooldown_remaining() > 0:
+            return False
+
         return self._start_worker("check")
 
     def download_update(self):
@@ -983,6 +1186,10 @@ class UpdateManager(QObject):
         )
 
         worker.release_data = self._release_data
+
+        worker.rate_limited.connect(
+            self._on_rate_limited
+        )
 
         worker.download_progress.connect(
             self.download_progress.emit
